@@ -1,7 +1,5 @@
 package com.sensors.sat;
 
-test
-// importing all of the java libariesOK
 import ioio.lib.api.AnalogInput;
 import ioio.lib.api.DigitalOutput;
 import ioio.lib.api.Uart;
@@ -10,6 +8,7 @@ import ioio.lib.util.BaseIOIOLooper;
 import ioio.lib.util.IOIOLooper;
 import ioio.lib.util.android.IOIOActivity;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -71,6 +70,8 @@ public class MainActivity extends IOIOActivity  {
     public String temp2;
     public String AT;
     public String read;
+    private Camera mCamera;
+    private PictureCallback jpegCallback;
 
     
  
@@ -250,6 +251,16 @@ public class MainActivity extends IOIOActivity  {
 					 out.write(gyz.getBytes());
 					 out.write(13);
 				  }
+				  if(temp2.contains("pic"))
+				  {
+					  mCamera = Camera.open();
+					  mCamera.takePicture();
+					  if (mCamera != null)
+					  {
+				            mCamera.release();
+				            mCamera = null;
+				      }
+				  }
 			  }
 			}
 
@@ -384,6 +395,30 @@ public class MainActivity extends IOIOActivity  {
         defaultUEH = Thread.getDefaultUncaughtExceptionHandler();
 
         Thread.setDefaultUncaughtExceptionHandler(_unCaughtExceptionHandler);
+    }
+    
+    /** Handles data for jpeg picture */
+    PictureCallback jpegCallback = new PictureCallback()
+    {
+    	public void onPictureTaken(byte[] data, Camera camera)
+    	{
+    		FileOutputStream outStream = null;
+    		try
+    		{
+    			outStream = new FileOutputStream(String.format("/sdcard/%d.jpg", System.currentTimeMillis()));
+    			outStream.write(data);
+    			outStream.close();
+    			
+    		}
+    		catch (FileNotFoundException e)
+    		{
+    			e.printStackTrace();
+    		}
+    		catch (IOException e)
+    		{
+    			e.printStackTrace();
+    		}
+    	}
     }
 }
 
