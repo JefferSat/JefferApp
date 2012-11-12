@@ -1,5 +1,6 @@
 package com.sensors.sat;
 
+test
 // importing all of the java libariesOK
 import ioio.lib.api.AnalogInput;
 import ioio.lib.api.DigitalOutput;
