@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<qualifiedTypeNameHistroy>
+<fullyQualifiedTypeName name="com.sat.test.R.id"/>
+<fullyQualifiedTypeName name="android.content.Intent"/>
+<fullyQualifiedTypeName name="android.widget.TextView.BufferType"/>
+<fullyQualifiedTypeName name="com.test.gps.R.id"/>
+<fullyQualifiedTypeName name="android.widget.TextView"/>
+<fullyQualifiedTypeName name="ioio.lib.api.Uart.Parity"/>
+<fullyQualifiedTypeName name="ioio.lib.api.Uart.StopBits"/>
+<fullyQualifiedTypeName name="java.io.IOException"/>
+<fullyQualifiedTypeName name="com.sensors.sat.R.id"/>
+</qualifiedTypeNameHistroy>
