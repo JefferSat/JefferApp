@@ -407,7 +407,7 @@ public class MainActivity extends IOIOActivity  {
     		FileOutputStream outStream = null;
     		try
     		{
-    			outStream = new FileOutputStream(String.format("/sdcard/%d.jpg", System.currentTimeMillis()));
+    			outStream = new FileOutputStream(String.format("/sdcard/JeffAppPic%d.jpg", System.currentTimeMillis()));
     			outStream.write(data);
     			outStream.close();
     			
