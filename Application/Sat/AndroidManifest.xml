@@ -2,7 +2,7 @@
     package="com.sensors.sat"
     android:versionCode="1"
     android:versionName="1.0" >
-
+<!-- test making change in Android Manifest and pushing -->
     <uses-sdk
         android:minSdkVersion="8"
         android:targetSdkVersion="15" />

@@ -32,7 +32,7 @@ import android.os.PowerManager.WakeLock;
 import android.view.Menu;
 import android.widget.TextView;
 
-//testing that this works seamless in git
+//test creating changes in the src and pushing
 public class MainActivity extends IOIOActivity  {
 	private UncaughtExceptionHandler defaultUEH;
     private TextView mLatLng;
