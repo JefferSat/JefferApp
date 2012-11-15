@@ -32,6 +32,7 @@ import android.os.PowerManager.WakeLock;
 import android.view.Menu;
 import android.widget.TextView;
 
+//testing .gitignore file
 public class MainActivity extends IOIOActivity  {
 	private UncaughtExceptionHandler defaultUEH;
     private TextView mLatLng;
