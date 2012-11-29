@@ -36,7 +36,7 @@ import android.widget.TextView;
 public class MainActivity extends IOIOActivity  {
 	private UncaughtExceptionHandler defaultUEH;
     private TextView mLatLng;
-    private TextView mBgSpdAlt;
+    private TextView mBgSpdAlt; //checking to see if it works
     private TextView mLight;
     private TextView mGrav;
     private TextView mMag;
