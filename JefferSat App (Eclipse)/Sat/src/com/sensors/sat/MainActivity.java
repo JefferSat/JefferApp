@@ -36,14 +36,14 @@ import android.widget.TextView;
 public class MainActivity extends IOIOActivity  {  //"Extends" gives mainactivity all of the attributes, properties and methods of "IOIOactivity"
 	private UncaughtExceptionHandler defaultUEH;   // Variable for error handler, which specifies how the thread (a particular process) handles an error
     private TextView mLatLng;                      // Textview displays the current date or time, which is associated with each latitude and longitude variable
-    private TextView mBgSpdAlt; 
-    private TextView mLight;
-    private TextView mGrav;
-    private TextView mMag;
-    private TextView mGyro;
-    private TextView mLED;
-    private TextView mBatt;
-    private LocationManager locationManager;
+    private TextView mBgSpdAlt;                    // Same
+    private TextView mLight;                       // Same
+    private TextView mGrav;                        // Same
+    private TextView mMag;                         // Same
+    private TextView mGyro;                        // Same
+    private TextView mLED;                         // Same
+    private TextView mBatt;                        // Same
+    private LocationManager locationManager;       //testing
     private SensorManager mSensorManager;
     private PowerManager mPowerManager;
     private WakeLock mWakeLock;
