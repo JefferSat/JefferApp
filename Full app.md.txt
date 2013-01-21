@@ -14,16 +14,16 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.text.DateFormat;
+import java.util.Date;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.Camera;
+import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
+import android.hardware.Camera.ShutterCallback;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -36,7 +36,11 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
+import android.util.Log;
 import android.view.Menu;
+import android.view.SurfaceView;
+import android.view.ViewGroup;
+import android.view.ViewGroup.LayoutParams;
 import android.widget.TextView;
 
 public class MainActivity extends IOIOActivity  {
@@ -80,8 +84,11 @@ public class MainActivity extends IOIOActivity  {
     public String temp2;
     public String AT;
     public String read;
-    private Camera mCamera;
-    private int iterations = 0;
+	Preview preview;
+	Camera camera;
+	String fileName;
+	private static final String TAG = "CamTestActivity";
+	private int numPicsTaken = 0;
 
     
  
@@ -99,11 +106,16 @@ public class MainActivity extends IOIOActivity  {
        mLED = (TextView) findViewById(R.id.led);
        mBatt = (TextView) findViewById(R.id.batt);
        
+       preview = new Preview(this, (SurfaceView)findViewById(R.id.surfaceView));
+       preview.setLayoutParams(new LayoutParams(LayoutParams.FILL_PARENT, LayoutParams.FILL_PARENT));
+       ((ViewGroup) findViewById(R.id.preview)).addView(preview);
+       preview.setKeepScreenOn(true);
+       
        mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
        mWakeLock = mPowerManager.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, getClass().getName());
 
        LocationManager locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-       locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10, 1, listener);
+       locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, listener);
        
        mSensorManager = (SensorManager) this.getSystemService(Context.SENSOR_SERVICE);   
        Sensor LightSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
@@ -122,10 +134,9 @@ public class MainActivity extends IOIOActivity  {
        
      }
     
-    	public void WriteToFile(float gyroX, float gyroY, float gyroZ) throws IOException
+    	public void WriteToFile(float gravX, float gravY, float gravZ, float pressure, double light, float magX, float magY, float magZ, float gyroX, float gyroY, float gyroZ, float thermistor) throws IOException
     	{
-       	
-    		iterations++;
+    		String timeString = DateFormat.getDateTimeInstance().format(new Date());
     		
 	       	File sdCard = Environment.getExternalStorageDirectory();
 	       	File dir = new File (sdCard.getAbsolutePath() + "/jefferapp");
@@ -134,8 +145,8 @@ public class MainActivity extends IOIOActivity  {
 	       	
 	       	FileOutputStream fos = new FileOutputStream(file, true);
 	       	
-	       	String newLine = System.getProperty("line.separator");
-	       	String sensorVal = new String(iterations + ") GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + "\r\n");
+	       	String sensorVal = new String(timeString + ") Latitude:" + lat + " Longitude:" + lng + " Speed:" + mph + " Bearing:" + bearing + " Altitude:" + alt + " GravX:" + gravX + " GravY:" + gravY + " GravZ:" + gravZ);
+	       	sensorVal += " Pressure:" + pressure + " Light:" + light + " MagX:" + magX + " MagY:" + magY + " magZ:" + magZ + " GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + " Pressure:" + pressure + "\r\n"; 
 	       	
 	       	fos.write(sensorVal.getBytes());
 	       	fos.close();
@@ -152,7 +163,7 @@ public class MainActivity extends IOIOActivity  {
 			uart = ioio_.openUart(4, 5, 9600, Uart.Parity.NONE, Uart.StopBits.ONE);
 			out = uart.getOutputStream();
 			in = uart.getInputStream();
-			uart2 = ioio_.openUart(10, 11, 19200, Uart.Parity.NONE, Uart.StopBits.ONE);
+			uart2 = ioio_.openUart(11, 10, 19200, Uart.Parity.NONE, Uart.StopBits.ONE);
 			out2 = uart2.getOutputStream();
 			in2 = uart2.getInputStream();
 			mBatt = ioio_.openAnalogInput(38);
@@ -280,16 +291,6 @@ public class MainActivity extends IOIOActivity  {
 					 out.write(gyz.getBytes());
 					 out.write(13);
 				  }
-				  if(temp2.contains("pic"))
-				  {
-					  mCamera = Camera.open();
-					  mCamera.takePicture(null, null, jpegCallback);
-					  if (mCamera != null)
-					  {
-				            mCamera.release();
-				            mCamera = null;
-				      }
-				  }
 				  if (temp2.contains("sat"))
 				  {
 					  String message = "AT+SBDWT=X:" + (int)gyroX + " Y:" + (int)gyroY + " Z:" + (int)gyroZ;
@@ -364,8 +365,98 @@ public class MainActivity extends IOIOActivity  {
     @Override
     protected void onResume() {
         super.onResume();
+        
+        camera = Camera.open();
+		camera.startPreview();
+		preview.setCamera(camera);
       
+		(new Thread(new Runnable()
+        {
+
+            public void run()
+            {
+                while (!Thread.interrupted())
+                    try
+                    {
+                    	if (numPicsTaken < 12)
+                    	{
+                    		Thread.sleep(5000); //5 secs for first minute, 30 secs afterward
+                    		numPicsTaken++;
+                    	}
+                    	else
+                    	{
+                    		Thread.sleep(30000); //5 secs for first minute, 30 secs afterward
+                    		numPicsTaken++;
+                    	}
+                        
+                        camera.autoFocus(myAutoFocusCallback); // this action have to be in UI thread
+                    }
+                    catch (InterruptedException e)
+                    {
+                        // ooops
+                    }
+            }
+        })).start();
     }
+    
+    private void resetCam() {
+		camera.startPreview();
+		preview.setCamera(camera);
+	}
+    
+    ShutterCallback shutterCallback = new ShutterCallback() {
+		public void onShutter() {
+			// Log.d(TAG, "onShutter'd");
+		}
+	};
+
+	PictureCallback rawCallback = new PictureCallback() {
+		public void onPictureTaken(byte[] data, Camera camera) {
+			// Log.d(TAG, "onPictureTaken - raw");
+		}
+	};
+
+	PictureCallback jpegCallback = new PictureCallback() {
+		public void onPictureTaken(byte[] data, Camera camera) {
+			try {
+				
+				File sdCard = Environment.getExternalStorageDirectory();
+		       	File dir = new File (sdCard.getAbsolutePath() + "/jefferapp");
+		       	dir.mkdirs();
+		       	String timeString = DateFormat.getDateTimeInstance().format(new Date());
+		       	File file = new File(dir, timeString + ".jpg");
+		       	
+		       	FileOutputStream fos2 = new FileOutputStream(file, true);
+				fos2.write(data);
+				fos2.close();
+				MediaScannerConnection.scanFile(getApplicationContext(), new String[] { file.getAbsolutePath() }, null, null);
+				Log.d(TAG, "onPictureTaken - wrote bytes: " + data.length);
+
+				resetCam();
+
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			} finally {
+			}
+			Log.d(TAG, "onPictureTaken - jpeg");
+		}
+	};
+	
+	AutoFocusCallback myAutoFocusCallback = new AutoFocusCallback(){
+
+	  public void onAutoFocus(boolean arg0, Camera arg1) {
+	   // TODO Auto-generated method stub
+		  camera.takePicture(shutterCallback, rawCallback, jpegCallback);
+	  }};
+	  
+	   ShutterCallback myShutterCallback = new ShutterCallback(){
+	
+	  public void onShutter() {
+	   // TODO Auto-generated method stub
+	   
+	  }};
     
     protected void onStop() {
         super.onStop();
@@ -422,17 +513,17 @@ public class MainActivity extends IOIOActivity  {
           gyroZ = event.values[2];
     	  mLED.setText("\n" + "Radio Modem: " + temp2);
           mGyro.setText("\n" + "Gyro X: " + gyroX + "\n" + "Gyro Y: " + gyroY + "\n" + "Gyro Z: " + gyroZ);
-		  try
-		  {
-			  WriteToFile(gyroX, gyroY, gyroZ);
-		  }
-		  catch (IOException e)
-		  {
-			  //This shoudn't hapen
-		  }
 		  mGyro.setText("\n" + "Gyro X: " + gyroX + "\n" + "Gyro Y: " + gyroY + "\n" + "Gyro 22Z: " + gyroZ);
     	}
-    	
+    	try
+		{
+    		float pressure = 0, thermistor = 0;
+		 WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ, thermistor);
+		}
+		catch (IOException e)
+		{
+		 //This shoudn't hapen
+		}
 	}	
 	};
 	
@@ -458,30 +549,6 @@ public class MainActivity extends IOIOActivity  {
 
         Thread.setDefaultUncaughtExceptionHandler(_unCaughtExceptionHandler);
     }
-    
-    /** Handles data for jpeg picture */
-    PictureCallback jpegCallback = new PictureCallback()
-    {
-    	public void onPictureTaken(byte[] data, Camera camera)
-    	{
-    		FileOutputStream outStream = null;
-    		try
-    		{
-    			outStream = new FileOutputStream(String.format("JeffAppPic%d.jpg", System.currentTimeMillis()));
-    			outStream.write(data);
-    			outStream.close();
-    			
-    		}
-    		catch (FileNotFoundException e)
-    		{
-    			e.printStackTrace();
-    		}
-    		catch (IOException e)
-    		{
-    			e.printStackTrace();
-    		}
-    	}
-    };
 }
 
 
