@@ -44,8 +44,8 @@ public class MainActivity extends IOIOActivity  {  //"Extends" gives mainactivit
     private TextView mLED;                         // Same
     private TextView mBatt;                        // Same
     private LocationManager locationManager;       //testing
-    private SensorManager mSensorManager;          //testin 4
-    private PowerManager mPowerManager;            
+    private SensorManager mSensorManager;          //testing 4
+    private PowerManager mPowerManager;
     private WakeLock mWakeLock;
     public double lat;
     public double lng;
