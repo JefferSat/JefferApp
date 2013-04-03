@@ -15,11 +15,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.util.Date;
 
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.hardware.Camera;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
@@ -32,6 +36,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.MediaScannerConnection;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
@@ -57,23 +62,28 @@ public class MainActivity extends IOIOActivity  {
     private SensorManager mSensorManager;
     private PowerManager mPowerManager;
     private WakeLock mWakeLock;
+    public boolean started = false;
+    public boolean firstStart = true;
     public double lat;
     public double lng;
     public double light;
     public double speed;
     public double mph;
-    public float bearing;
+    public double bearing;
     public double alt;
-    public float gravX;
-    public float gravY;
-    public float gravZ;
-    public float magX;
-    public float magY;
-    public float magZ;
-    public float gyroX;
-    public float gyroY;
-    public float gyroZ;
-    public float batt;
+    public double gravX;
+    public double gravY;
+    public double gravZ;
+    public double magX;
+    public double magY;
+    public double magZ;
+    public double gyroX;
+    public double gyroY;
+    public double gyroZ;
+    public double batt;
+    public double pressure;
+    public double batteryPct;
+    public double identifyingPattern = 3.14;
     private Uart uart;
     private Uart uart2;
     private InputStream in;
@@ -90,13 +100,26 @@ public class MainActivity extends IOIOActivity  {
 	private static final String TAG = "CamTestActivity";
 	private int numPicsTaken = 0;
 
-    
+	private BroadcastReceiver mBatInfoReceiver = new BroadcastReceiver()
+	{
+		@Override
+		public void onReceive(Context c, Intent i)
+		{
+			int level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+	       	int scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+
+	       	batteryPct = level / (float)scale * 100;
+		}
+	};
  
     @SuppressLint("NewApi")
     @Override
     public void onCreate(Bundle savedInstanceState) {
        super.onCreate(savedInstanceState);
        setContentView(R.layout.main);
+       
+       registerReceiver(mBatInfoReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+       
        mLatLng = (TextView) findViewById(R.id.latlng);
        mBgSpdAlt = (TextView) findViewById(R.id.bgspdalt);
        mLight = (TextView) findViewById(R.id.light);
@@ -130,30 +153,13 @@ public class MainActivity extends IOIOActivity  {
        Sensor GyroScope = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);   
        mSensorManager.registerListener(mSensorListener, GyroScope, SensorManager.SENSOR_DELAY_NORMAL);
        
+       Sensor PressureSens = mSensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+       mSensorManager.registerListener(mSensorListener, PressureSens, SensorManager.SENSOR_DELAY_NORMAL);
+       
        mWakeLock.acquire();
        
      }
-    
-    	public void WriteToFile(float gravX, float gravY, float gravZ, float pressure, double light, float magX, float magY, float magZ, float gyroX, float gyroY, float gyroZ, float thermistor) throws IOException
-    	{
-    		String timeString = DateFormat.getDateTimeInstance().format(new Date());
-    		
-	       	File sdCard = Environment.getExternalStorageDirectory();
-	       	File dir = new File (sdCard.getAbsolutePath() + "/jefferapp");
-	       	dir.mkdirs();
-	       	File file = new File(dir, "jeffertest.txt");
-	       	
-	       	FileOutputStream fos = new FileOutputStream(file, true);
-	       	
-	       	String sensorVal = new String(timeString + ") Latitude:" + lat + " Longitude:" + lng + " Speed:" + mph + " Bearing:" + bearing + " Altitude:" + alt + " GravX:" + gravX + " GravY:" + gravY + " GravZ:" + gravZ);
-	       	sensorVal += " Pressure:" + pressure + " Light:" + light + " MagX:" + magX + " MagY:" + magY + " magZ:" + magZ + " GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + " Pressure:" + pressure + "\r\n"; 
-	       	
-	       	fos.write(sensorVal.getBytes());
-	       	fos.close();
-	    		
-	    	MediaScannerConnection.scanFile(getApplicationContext(), new String[] { file.getAbsolutePath() }, null, null);
-       }
-    
+    	
 	class Looper extends BaseIOIOLooper {
 		private DigitalOutput led_;
 		private int bufferSize = 128;
@@ -183,147 +189,329 @@ public class MainActivity extends IOIOActivity  {
 	    }
 	    
 	    
+	    
+	    
 	    //IOIO Loop
 		@Override
 		public void loop() throws ConnectionLostException 
 		{
 			led_.write(false);
 			wait(100);
-		
-			try
-			{
-				batt = (float) ((mBatt.read())*15.6697);
-			}
-			catch (InterruptedException e)
-			{
-				//ioio_.disconnect();
-			}	
-
-			//in is the command we send from the computer
-			//out is the result we get from the modem
-			/*UART Communications - Radio Modem */
-			try
-			{
-			  int availableBytes = in.available();
-			  if(in.available()>0)
-			  {
-				  byte[] readBuffer = new byte [bufferSize];
-				  in.read(readBuffer, 0, availableBytes);
-				  char[] temp = (new String(readBuffer,0, availableBytes)).toCharArray();
-				  temp2 = new String(temp);
 			
-				  if(temp2.contains("lgt"))
-				  {
-					 String lit = "Light Sensor: " + light;
-					 out.write(lit.getBytes());
-					 out.write(13);
-					  
-				  }
-				  
-				  if(temp2.contains("bat"))
-				  {
-					 String battery = "Battery: " + batt + "V";
-					 out.write(battery.getBytes());
-					 out.write(13);  
-				  }
-				  
-				  if(temp2.contains("gps"))
-				  {
-					 String latlng = "Lat: " + lat + " Long: " + lng;
-					 out.write(latlng.getBytes());
-					 out.write(13);
-					 String bng = "Bearing: " + bearing;
-					 out.write(bng.getBytes());
-					 out.write(13);
-					 String sped = "Speed: " + speed;
-					 out.write(sped.getBytes());
-					 out.write(13);
-					 String altitude = "Altitude: " + alt;
-					 out.write(altitude.getBytes());
-					 out.write(13);
-					 
-				  }
-				  
-				  if(temp2.contains("grv"))
-				  {
-					 String gravity = "Gravity: ";
-					 out.write(gravity.getBytes());
-					 out.write(13);
-					 String gvx = "X: " + gravX;
-					 out.write(gvx.getBytes());
-					 out.write(13);
-					 String gvy = "Y: " + gravY;
-					 out.write(gvy.getBytes());
-					 out.write(13);
-					 String gvz = "Z: " + gravZ;
-					 out.write(gvz.getBytes());
-					 out.write(13);
-				  }
-				  
-				  if(temp2.contains("mag"))
-				  {
-					 String magnet = "Magnetometer: ";
-					 out.write(magnet.getBytes());
-					 out.write(13);
-					 String mgx = "X: " + magX;
-					 out.write(mgx.getBytes());
-					 out.write(13);
-					 String mgy = "Y: " + magY;
-					 out.write(mgy.getBytes());
-					 out.write(13);
-					 String mgz = "Z: " + magZ;
-					 out.write(mgz.getBytes());
-					 out.write(13);
-				  }
-				  
-				  if(temp2.contains("gyo"))
-				  {
-					 String gyroscope = "Gyro: ";
-					 out.write(gyroscope.getBytes());
-					 out.write(13);
-					 String gyx = "X: " + gyroX;
-					 out.write(gyx.getBytes());
-					 out.write(13);
-					 String gyy = "Y: " + gyroY;
-					 out.write(gyy.getBytes());
-					 out.write(13);
-					 String gyz = "Z: " + gyroZ;
-					 out.write(gyz.getBytes());
-					 out.write(13);
-				  }
-				  if (temp2.contains("sat"))
-				  {
-					  String message = "AT+SBDWT=X:" + (int)gyroX + " Y:" + (int)gyroY + " Z:" + (int)gyroZ;
-					  
-		 			  out2.write(message.getBytes());
-		 			  wait(2000);
-		 			  out2.write(13);
-		 			  wait(2000);
-		 			  byte[] buffer1 = new byte [in2.available()];
-		 			  in2.read(buffer1, 0, in2.available());
-		 			  wait(2000);
-		 			  out.write("1:".getBytes());
-		 			  out.write(buffer1);
-		 			  
-		 			  out2.write("AT+SBDIX".getBytes());
-		 			 wait(2000);
-		 			  out2.write(13);
-		 			 wait(2000);
-		 			  buffer1 = new byte [in2.available()];
-		 			  in2.read(buffer1, 0, in2.available());
-		 			 wait(2000);
-		 			 out.write("2:".getBytes());
-		 			  out.write(buffer1);
-				  } 
-			  }
-			}
-
-			catch(IOException e)
+			if (started == true && firstStart == true)
 			{
-				e.printStackTrace();
+				firstStart = false;
+				
+				//----------------------PICTURE TAKING THREAD -------------------------------------------------------
+				(new Thread(new Runnable()
+		        {
+
+		            public void run()
+		            {
+		                while (!Thread.interrupted())
+		                    try
+		                    {
+		                    	if (numPicsTaken < 12)
+		                    	{
+		                    		Thread.sleep(5000); //5 secs for first minute, 30 secs afterward
+		                    		numPicsTaken++;
+		                    	}
+		                    	else
+		                    	{
+		                    		Thread.sleep(30000); //5 secs for first minute, 30 secs afterward
+		                    		numPicsTaken++;
+		                    	}
+		                        
+		                        camera.autoFocus(myAutoFocusCallback); // this action have to be in UI thread
+		                    }
+		                    catch (InterruptedException e)
+		                    {
+		                        // ooops
+		                    }
+		            }
+		        })).start();
+				
+				//-----------------------RADIO DATA PACKET SENDING AND DATA RECORDING ON PHONE THREAD-----------------------------------
+				(new Thread(new Runnable()
+		        {
+
+		            public void run()
+		            {
+		                while (!Thread.interrupted())
+		                    try
+		                    {
+		                    	sendDataPackets();
+		                    	try
+		                    	{
+									WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ, 0);
+								}
+		                    	catch (IOException e)
+		                    	{
+									e.printStackTrace();
+								}
+		                    	Thread.sleep(1000);
+		                    }
+		                    catch (InterruptedException e)
+		                    {
+		                        // ooops
+		                    }
+		            }
+
+		            public void sendDataPackets()
+		    	    {
+		    	    	writeDataOut(identifyingPattern);
+		    	    	writeDataOut(batteryPct);
+		    	    	//writeDataOut(lipoVoltage);
+		    	    	writeDataOut(lat);
+		    	    	writeDataOut(lng);
+		    	    	writeDataOut(mph);
+		    	    	writeDataOut(bearing);
+		    	    	writeDataOut(alt);
+		    	    	//writeDataOut(extLat);
+		    	    	//writeDataOut(extLong);
+		    	    	//writeDataOut(extAltitude);
+		    	    	writeDataOut(gravX);
+		    	    	writeDataOut(gravY);
+		    	    	writeDataOut(gravZ);
+		    	    	writeDataOut(pressure);
+		    	    	writeDataOut(light);
+						writeDataOut(magX);
+		    	    	writeDataOut(magY);
+		    	    	writeDataOut(magZ);
+		    	    	writeDataOut(gyroX);
+		    	    	writeDataOut(gyroY);
+		    	    	writeDataOut(gyroZ);
+		    	    	//writeDataOut(therm1);
+		    	    	//writeDataOut(therm2);
+		    	    	//writeDataOut(therm3);
+		    	    	//writeDataOut(picData);
+		    	    }
+		    	    
+		            public void writeDataOut(Double dbl)
+		        	{
+		        		try
+		        		{
+		        			out.write(doubleToByteArray(dbl));
+		        		}
+		        		catch (Exception e)
+		        		{
+		        			//sdf
+		        		}
+		        	}
+
+		        	public byte[] doubleToByteArray(double value) {
+		        	    byte[] bytes = new byte[8];
+		        	    ByteBuffer.wrap(bytes).putDouble(value);
+		        	    return bytes;
+		        	}
+		        	
+		        	public void WriteToFile(double gravX, double gravY, double gravZ, double pressure, double light, double magX, double magY, double magZ, double gyroX, double gyroY, double gyroZ, double thermistor) throws IOException
+		        	{
+		        		String timeString = DateFormat.getDateTimeInstance().format(new Date());
+		        		
+		    	       	File sdCard = Environment.getExternalStorageDirectory();
+		    	       	File dir = new File (sdCard.getAbsolutePath() + "/jefferapp");
+		    	       	dir.mkdirs();
+		    	       	File file = new File(dir, "jeffertest.txt");
+		    	       	
+		    	       	FileOutputStream fos = new FileOutputStream(file, true);
+		    	       	
+		    	       	String sensorVal = new String(timeString + ") Battery:" + batteryPct + " Latitude:" + lat + " Longitude:" + lng + " Speed:" + mph + " Bearing:" + bearing + " Altitude:" + alt + " GravX:" + gravX + " GravY:" + gravY + " GravZ:" + gravZ);
+		    	       	sensorVal += " Pressure:" + pressure + " Light:" + light + " MagX:" + magX + " MagY:" + magY + " magZ:" + magZ + " GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + " Thermistor:" + pressure + "\r\n"; 
+		    	       	
+		    	       	fos.write(sensorVal.getBytes());
+		    	       	fos.close();
+		    	    		
+		    	    	MediaScannerConnection.scanFile(getApplicationContext(), new String[] { file.getAbsolutePath() }, null, null);
+		           }
+		        })).start();
+				
+				//--------------------------Satellite Data Sending Thread-------------------------------
+				(new Thread(new Runnable()
+		        {
+
+		            public void run()
+		            {
+		                while (!Thread.interrupted())
+		                {
+		                	try
+		        			{
+		        			
+        					wait(2000);
+        					AT="AT+CSQ";
+        					out2.write(AT.getBytes());
+        					out2.write(13);
+		                	
+		                	int availableBytes = in2.available();
+		                	
+		                	byte[] readBuffer = new byte [bufferSize];
+		  				    in2.read(readBuffer, 0, availableBytes);
+		  				    char[] temp = (new String(readBuffer,0, availableBytes)).toCharArray();
+		  				    temp2 = new String(temp);
+		                	
+		                	if(temp2.contains("+CSQ:3") || temp2.contains("+CSQ:4") || temp2.contains("+CSQ:5"))
+							  {
+								  wait(3000);
+								  String AT = "AT+SBDWT=Coordinates: " + lat + ", " + lng;
+								  out2.write(AT.getBytes());
+								  out2.write(13);
+								  wait(2000);
+								  String ATB = "AT+SBDIX";
+								   out2.write(ATB.getBytes());
+								   out2.write(13);
+								  wait(15000000);				     
+							  }
+		        			}
+		                	catch(Exception e)
+		        			{
+		        				e.printStackTrace();
+		        			} 
+		                }
+		            }
+		        })).start();
 			}
-			
-		 
+			else
+			{
+				try
+				{
+					batt = (float) ((mBatt.read())*15.6697);
+				}
+				catch (InterruptedException e)
+				{
+					//ioio_.disconnect();
+				}
+				
+				//TODO: Breaking down picture data and sending data
+
+				//in is the command we send from the computer
+				//out is the result we get from the modem
+				/*UART Communications - Radio Modem */
+				try
+				{
+				  int availableBytes = in.available();
+				  if(in.available()>0)
+				  {
+					  byte[] readBuffer = new byte [bufferSize];
+					  in.read(readBuffer, 0, availableBytes);
+					  char[] temp = (new String(readBuffer,0, availableBytes)).toCharArray();
+					  temp2 = new String(temp);
+				
+					  if(temp2.contains("lgt"))
+					  {
+						 String lit = "Light Sensor: " + light;
+						 out.write(lit.getBytes());
+						 out.write(13);
+						  
+					  }
+					  
+					  if(temp2.contains("bat"))
+					  {
+						 String battery = "Battery: " + batt + "V";
+						 out.write(battery.getBytes());
+						 out.write(13);  
+					  }
+					  
+					  if(temp2.contains("gps"))
+					  {
+						 String latlng = "Lat: " + lat + " Long: " + lng;
+						 out.write(latlng.getBytes());
+						 out.write(13);
+						 String bng = "Bearing: " + bearing;
+						 out.write(bng.getBytes());
+						 out.write(13);
+						 String sped = "Speed: " + speed;
+						 out.write(sped.getBytes());
+						 out.write(13);
+						 String altitude = "Altitude: " + alt;
+						 out.write(altitude.getBytes());
+						 out.write(13);
+						 
+					  }
+					  
+					  if(temp2.contains("grv"))
+					  {
+						 String gravity = "Gravity: ";
+						 out.write(gravity.getBytes());
+						 out.write(13);
+						 String gvx = "X: " + gravX;
+						 out.write(gvx.getBytes());
+						 out.write(13);
+						 String gvy = "Y: " + gravY;
+						 out.write(gvy.getBytes());
+						 out.write(13);
+						 String gvz = "Z: " + gravZ;
+						 out.write(gvz.getBytes());
+						 out.write(13);
+					  }
+					  
+					  if (temp2.contains("stt"))
+					  {
+						  started = true;
+					  }
+					  
+					  if(temp2.contains("mag"))
+					  {
+						 String magnet = "Magnetometer: ";
+						 out.write(magnet.getBytes());
+						 out.write(13);
+						 String mgx = "X: " + magX;
+						 out.write(mgx.getBytes());
+						 out.write(13);
+						 String mgy = "Y: " + magY;
+						 out.write(mgy.getBytes());
+						 out.write(13);
+						 String mgz = "Z: " + magZ;
+						 out.write(mgz.getBytes());
+						 out.write(13);
+					  }
+					  
+					  if(temp2.contains("gyo"))
+					  {
+						 String gyroscope = "Gyro: ";
+						 out.write(gyroscope.getBytes());
+						 out.write(13);
+						 String gyx = "X: " + gyroX;
+						 out.write(gyx.getBytes());
+						 out.write(13);
+						 String gyy = "Y: " + gyroY;
+						 out.write(gyy.getBytes());
+						 out.write(13);
+						 String gyz = "Z: " + gyroZ;
+						 out.write(gyz.getBytes());
+						 out.write(13);
+					  }
+					  if (temp2.contains("sat"))
+					  {
+						  String message = "AT+SBDWT=X:" + (int)gyroX + " Y:" + (int)gyroY + " Z:" + (int)gyroZ;
+						  
+			 			  out2.write(message.getBytes());
+			 			  wait(2000);
+			 			  out2.write(13);
+			 			  wait(2000);
+			 			  byte[] buffer1 = new byte [in2.available()];
+			 			  in2.read(buffer1, 0, in2.available());
+			 			  wait(2000);
+			 			  out.write("1:".getBytes());
+			 			  out.write(buffer1);
+			 			  
+			 			  out2.write("AT+SBDIX".getBytes());
+			 			 wait(2000);
+			 			  out2.write(13);
+			 			 wait(2000);
+			 			  buffer1 = new byte [in2.available()];
+			 			  in2.read(buffer1, 0, in2.available());
+			 			 wait(2000);
+			 			 out.write("2:".getBytes());
+			 			  out.write(buffer1);
+					  } 
+				  }
+				}
+
+				catch(IOException e)
+				{
+					e.printStackTrace();
+				}
+			}
 		}
 	}
 
@@ -369,34 +557,6 @@ public class MainActivity extends IOIOActivity  {
         camera = Camera.open();
 		camera.startPreview();
 		preview.setCamera(camera);
-      
-		(new Thread(new Runnable()
-        {
-
-            public void run()
-            {
-                while (!Thread.interrupted())
-                    try
-                    {
-                    	if (numPicsTaken < 12)
-                    	{
-                    		Thread.sleep(5000); //5 secs for first minute, 30 secs afterward
-                    		numPicsTaken++;
-                    	}
-                    	else
-                    	{
-                    		Thread.sleep(30000); //5 secs for first minute, 30 secs afterward
-                    		numPicsTaken++;
-                    	}
-                        
-                        camera.autoFocus(myAutoFocusCallback); // this action have to be in UI thread
-                    }
-                    catch (InterruptedException e)
-                    {
-                        // ooops
-                    }
-            }
-        })).start();
     }
     
     private void resetCam() {
@@ -447,14 +607,12 @@ public class MainActivity extends IOIOActivity  {
 	AutoFocusCallback myAutoFocusCallback = new AutoFocusCallback(){
 
 	  public void onAutoFocus(boolean arg0, Camera arg1) {
-	   // TODO Auto-generated method stub
-		  camera.takePicture(shutterCallback, rawCallback, jpegCallback);
+		  arg1.takePicture(shutterCallback, rawCallback, jpegCallback);
 	  }};
 	  
 	   ShutterCallback myShutterCallback = new ShutterCallback(){
 	
 	  public void onShutter() {
-	   // TODO Auto-generated method stub
 	   
 	  }};
     
@@ -513,17 +671,19 @@ public class MainActivity extends IOIOActivity  {
           gyroZ = event.values[2];
     	  mLED.setText("\n" + "Radio Modem: " + temp2);
           mGyro.setText("\n" + "Gyro X: " + gyroX + "\n" + "Gyro Y: " + gyroY + "\n" + "Gyro Z: " + gyroZ);
-		  mGyro.setText("\n" + "Gyro X: " + gyroX + "\n" + "Gyro Y: " + gyroY + "\n" + "Gyro 22Z: " + gyroZ);
     	}
-    	try
+    	else if(sensor.getType() == Sensor.TYPE_PRESSURE) {
+      	  pressure = event.values[0];
+      	}
+    	/*try
 		{
-    		float pressure = 0, thermistor = 0;
-		 WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ, thermistor);
+    		float thermistor = 0;
+    		WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ, thermistor);
 		}
 		catch (IOException e)
 		{
 		 //This shoudn't hapen
-		}
+		}*/
 	}	
 	};
 	
