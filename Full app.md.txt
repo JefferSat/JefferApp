@@ -15,11 +15,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.util.Date;
 
 import android.annotation.SuppressLint;
+import android.app.AlarmManager;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -44,8 +49,10 @@ import android.os.PowerManager.WakeLock;
 import android.util.Log;
 import android.view.Menu;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
+import android.view.WindowManager;
 import android.widget.TextView;
 
 public class MainActivity extends IOIOActivity  {
@@ -58,6 +65,8 @@ public class MainActivity extends IOIOActivity  {
     private TextView mGyro;
     private TextView mLED;
     private TextView mBatt;
+    public String extSat;
+    public String satSignal;
     private LocationManager locationManager;
     private SensorManager mSensorManager;
     private PowerManager mPowerManager;
@@ -65,11 +74,13 @@ public class MainActivity extends IOIOActivity  {
     public boolean started = false;
     public boolean firstStart = true;
     public double lat;
+    public double sending = 0;
     public double lng;
     public double light;
     public double speed;
     public double mph;
     public double bearing;
+    //private Intent servIntent;
     public double alt;
     public double gravX;
     public double gravY;
@@ -80,17 +91,28 @@ public class MainActivity extends IOIOActivity  {
     public double gyroX;
     public double gyroY;
     public double gyroZ;
+    public double lipo_battery;
+    public double thermistor1;
+    public double thermistor2;
     public double batt;
     public double pressure;
     public double batteryPct;
     public double identifyingPattern = 3.14;
+    public double externalLatitude = 0;
+    public double externalLongitude = 0;
+    public double externalAltitude = 0;
     private Uart uart;
     private Uart uart2;
+    private Uart uart3;
     private InputStream in;
     private OutputStream out;
     private InputStream in2;
     private OutputStream out2;
+    private InputStream in3;
     public String b;
+    public AnalogInput lipo;
+    public AnalogInput therm1;
+    public AnalogInput therm2;
     public String temp2;
     public String AT;
     public String read;
@@ -158,12 +180,20 @@ public class MainActivity extends IOIOActivity  {
        
        mWakeLock.acquire();
        
+       //servIntent = new Intent(this, MainActivityService.class);
+       
+       //startService(servIntent);
+       
+       /*WindowManager.LayoutParams params = getWindow().getAttributes();
+       params.flags |= LayoutParams.FLAG_KEEP_SCREEN_ON;
+       params.screenBrightness = 0;
+       getWindow().setAttributes(params);*/
+       
      }
     	
 	class Looper extends BaseIOIOLooper {
 		private DigitalOutput led_;
 		private int bufferSize = 128;
-		private AnalogInput mBatt;
 		protected void setup() throws ConnectionLostException {
 			led_ = ioio_.openDigitalOutput(0, true);
 			uart = ioio_.openUart(4, 5, 9600, Uart.Parity.NONE, Uart.StopBits.ONE);
@@ -172,8 +202,11 @@ public class MainActivity extends IOIOActivity  {
 			uart2 = ioio_.openUart(11, 10, 19200, Uart.Parity.NONE, Uart.StopBits.ONE);
 			out2 = uart2.getOutputStream();
 			in2 = uart2.getInputStream();
-			mBatt = ioio_.openAnalogInput(38);
-
+			uart3 = ioio_.openUart(27, 28, 9600, Uart.Parity.NONE, Uart.StopBits.ONE);
+			in3 = uart3.getInputStream();
+			lipo = ioio_.openAnalogInput(38);
+			therm1 = ioio_.openAnalogInput(42); //External
+			therm2 = ioio_.openAnalogInput(46); //Internal
 		}
 		
 
@@ -203,7 +236,7 @@ public class MainActivity extends IOIOActivity  {
 				firstStart = false;
 				
 				//----------------------PICTURE TAKING THREAD -------------------------------------------------------
-				(new Thread(new Runnable()
+				new Thread(new Runnable()
 		        {
 
 		            public void run()
@@ -229,10 +262,11 @@ public class MainActivity extends IOIOActivity  {
 		                        // ooops
 		                    }
 		            }
-		        })).start();
+		        }).start();
 				
-				//-----------------------RADIO DATA PACKET SENDING AND DATA RECORDING ON PHONE THREAD-----------------------------------
-				(new Thread(new Runnable()
+				//--------------------------External GPS Data Capturing-------------------------------
+				//getting altitude, latitude and longitude off of $GPGGA
+				new Thread(new Runnable()
 		        {
 
 		            public void run()
@@ -240,10 +274,62 @@ public class MainActivity extends IOIOActivity  {
 		                while (!Thread.interrupted())
 		                    try
 		                    {
+		        			
+        					Thread.sleep(1000);
+		                	
+		                	int availableBytes = in3.available();
+		                	
+		                	byte[] readBuffer = new byte [512];
+		  				    in3.read(readBuffer, 0, availableBytes);
+		  				    char[] temp = (new String(readBuffer,0, availableBytes)).toCharArray();
+		  				    temp2 = new String(temp);
+			    	    				  				    
+		  				    temp2 = temp2.substring(temp2.indexOf("$GPGGA"), temp2.length());
+		  				//  String attempt = "$GPGGA,144945.00,3801.98059,N,07830.65980,W,1,04,3.26,180.1,M,-34.3,M,,*6C";
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	externalLatitude = Double.parseDouble(temp2.substring(0, temp2.indexOf(','))) / 100;
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	if (temp2.substring(0, temp2.indexOf(',')).equals("S"))
+							{
+								externalLatitude = -externalLatitude;
+							}
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	externalLongitude = Double.parseDouble(temp2.substring(0, temp2.indexOf(','))) / 100;
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	if (temp2.substring(0, temp2.indexOf(',')).equals("W"))
+							{
+								externalLongitude = -externalLongitude;
+							}
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	temp2 = temp2.substring(temp2.indexOf(',') + 1, temp2.length());
+		                	externalAltitude = Double.parseDouble(temp2.substring(0, temp2.indexOf(',')));
+		        			}
+		                catch(Exception e)
+	        			{
+	        				e.printStackTrace();
+	        			} 
+	                }
+	        	}).start();
+				
+				//-----------------------RADIO DATA PACKET SENDING AND DATA RECORDING ON PHONE THREAD-----------------------------------
+				new Thread(new Runnable()
+		        {
+
+		            public void run()
+		            {
+		                while (!Thread.interrupted())
+		                    try
+		                    {
+		                    	lipo_battery = lipo.read() * 24;
+		                    	thermistor1 = (therm1.read() * 100 * 1.8) + 32;
+		                    	thermistor2 = (therm2.read() * 100 * 1.8) + 32;
 		                    	sendDataPackets();
 		                    	try
 		                    	{
-									WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ, 0);
+									WriteToFile(gravX, gravY, gravZ, pressure, light, magX, magY, magZ, gyroX, gyroY, gyroZ);
 								}
 		                    	catch (IOException e)
 		                    	{
@@ -251,7 +337,7 @@ public class MainActivity extends IOIOActivity  {
 								}
 		                    	Thread.sleep(1000);
 		                    }
-		                    catch (InterruptedException e)
+		                    catch (Exception e)
 		                    {
 		                        // ooops
 		                    }
@@ -261,15 +347,11 @@ public class MainActivity extends IOIOActivity  {
 		    	    {
 		    	    	writeDataOut(identifyingPattern);
 		    	    	writeDataOut(batteryPct);
-		    	    	//writeDataOut(lipoVoltage);
 		    	    	writeDataOut(lat);
 		    	    	writeDataOut(lng);
 		    	    	writeDataOut(mph);
 		    	    	writeDataOut(bearing);
 		    	    	writeDataOut(alt);
-		    	    	//writeDataOut(extLat);
-		    	    	//writeDataOut(extLong);
-		    	    	//writeDataOut(extAltitude);
 		    	    	writeDataOut(gravX);
 		    	    	writeDataOut(gravY);
 		    	    	writeDataOut(gravZ);
@@ -281,9 +363,12 @@ public class MainActivity extends IOIOActivity  {
 		    	    	writeDataOut(gyroX);
 		    	    	writeDataOut(gyroY);
 		    	    	writeDataOut(gyroZ);
-		    	    	//writeDataOut(therm1);
-		    	    	//writeDataOut(therm2);
-		    	    	//writeDataOut(therm3);
+		    	    	writeDataOut(lipo_battery);
+		    	    	writeDataOut(externalLatitude);
+		    	    	writeDataOut(externalLongitude);
+		    	    	writeDataOut(externalAltitude);
+		    	    	writeDataOut(thermistor1);
+		    	    	writeDataOut(thermistor2);
 		    	    	//writeDataOut(picData);
 		    	    }
 		    	    
@@ -305,7 +390,7 @@ public class MainActivity extends IOIOActivity  {
 		        	    return bytes;
 		        	}
 		        	
-		        	public void WriteToFile(double gravX, double gravY, double gravZ, double pressure, double light, double magX, double magY, double magZ, double gyroX, double gyroY, double gyroZ, double thermistor) throws IOException
+		        	public void WriteToFile(double gravX, double gravY, double gravZ, double pressure, double light, double magX, double magY, double magZ, double gyroX, double gyroY, double gyroZ) throws IOException
 		        	{
 		        		String timeString = DateFormat.getDateTimeInstance().format(new Date());
 		        		
@@ -316,18 +401,18 @@ public class MainActivity extends IOIOActivity  {
 		    	       	
 		    	       	FileOutputStream fos = new FileOutputStream(file, true);
 		    	       	
-		    	       	String sensorVal = new String(timeString + ") Battery:" + batteryPct + " Latitude:" + lat + " Longitude:" + lng + " Speed:" + mph + " Bearing:" + bearing + " Altitude:" + alt + " GravX:" + gravX + " GravY:" + gravY + " GravZ:" + gravZ);
-		    	       	sensorVal += " Pressure:" + pressure + " Light:" + light + " MagX:" + magX + " MagY:" + magY + " magZ:" + magZ + " GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + " Thermistor:" + pressure + "\r\n"; 
+		    	       	String sensorVal = new String(timeString + ") Battery:" + batteryPct + " InternalLatitude:" + lat + " InternalLongitude:" + lng + " ExternalLatitude:" + externalLatitude + " ExternalLongitude:" + externalLongitude + " ExternalAltitude:" + externalAltitude + " Speed:" + mph + " Bearing:" + bearing + " Altitude:" + alt + " GravX:" + gravX + " GravY:" + gravY + " GravZ:" + gravZ);
+		    	       	sensorVal += " Pressure:" + pressure + " Light:" + light + " MagX:" + magX + " MagY:" + magY + " magZ:" + magZ + " GyroX:" + gyroX + " GyroY:" + gyroY + " GyroZ:" + gyroZ + " Thermistor1:" + thermistor1 + " Thermistor2:" + thermistor2 + "\r\n"; 
 		    	       	
 		    	       	fos.write(sensorVal.getBytes());
 		    	       	fos.close();
 		    	    		
 		    	    	MediaScannerConnection.scanFile(getApplicationContext(), new String[] { file.getAbsolutePath() }, null, null);
 		           }
-		        })).start();
+		        }).start();
 				
 				//--------------------------Satellite Data Sending Thread-------------------------------
-				(new Thread(new Runnable()
+				new Thread(new Runnable()
 		        {
 
 		            public void run()
@@ -336,11 +421,14 @@ public class MainActivity extends IOIOActivity  {
 		                {
 		                	try
 		        			{
-		        			
-        					wait(2000);
+		                		extSat = "unsent";
+		                		
+        					Thread.sleep(1000000);
         					AT="AT+CSQ";
         					out2.write(AT.getBytes());
         					out2.write(13);
+        					
+        					
 		                	
 		                	int availableBytes = in2.available();
 		                	
@@ -348,18 +436,40 @@ public class MainActivity extends IOIOActivity  {
 		  				    in2.read(readBuffer, 0, availableBytes);
 		  				    char[] temp = (new String(readBuffer,0, availableBytes)).toCharArray();
 		  				    temp2 = new String(temp);
+		  				    
+		  				    satSignal = "First:" + availableBytes + " " + temp2 + " " + availableBytes;
 		                	
 		                	if(temp2.contains("+CSQ:3") || temp2.contains("+CSQ:4") || temp2.contains("+CSQ:5"))
 							  {
-								  wait(3000);
-								  String AT = "AT+SBDWT=Coordinates: " + lat + ", " + lng;
+                				Thread.sleep(3000);
+								  String AT = "AT+SBDWT=Coordinates: " + Math.round(externalLatitude * 100) / 100 + ", " + Math.round(externalLongitude * 100) / 100;
 								  out2.write(AT.getBytes());
 								  out2.write(13);
-								  wait(2000);
+								  
+								  availableBytes = in2.available();
+				                	
+				                	readBuffer = new byte [bufferSize];
+				  				    in2.read(readBuffer, 0, availableBytes);
+				  				    temp = (new String(readBuffer,0, availableBytes)).toCharArray();
+				  				    temp2 = new String(temp);
+				  				    
+				  				    satSignal = "Second:" + temp2; //What?
+				  				    
 								  String ATB = "AT+SBDIX";
 								   out2.write(ATB.getBytes());
 								   out2.write(13);
-								  wait(15000000);				     
+								   extSat = "sent"; //TODO: Does this work?
+								   
+								   availableBytes = in2.available();
+								   
+								   readBuffer = new byte [bufferSize];
+				  				    in2.read(readBuffer, 0, availableBytes);
+				  				    temp = (new String(readBuffer,0, availableBytes)).toCharArray();
+				  				    temp2 = new String(temp);
+				  				    
+				  				    satSignal = "Third:" + temp2; //What?
+								   
+								  Thread.sleep(1500000);			    
 							  }
 		        			}
 		                	catch(Exception e)
@@ -368,19 +478,10 @@ public class MainActivity extends IOIOActivity  {
 		        			} 
 		                }
 		            }
-		        })).start();
+		        }).start();
 			}
 			else
 			{
-				try
-				{
-					batt = (float) ((mBatt.read())*15.6697);
-				}
-				catch (InterruptedException e)
-				{
-					//ioio_.disconnect();
-				}
-				
 				//TODO: Breaking down picture data and sending data
 
 				//in is the command we send from the computer
@@ -388,6 +489,18 @@ public class MainActivity extends IOIOActivity  {
 				/*UART Communications - Radio Modem */
 				try
 				{
+					
+					try
+					{
+						lipo_battery = lipo.read() * 24;
+						thermistor1 = (therm1.read() * 100 * 1.8) + 32;
+                    	thermistor2 = (therm2.read() * 100 * 1.8) + 32;
+					}
+		        	
+		        	catch (InterruptedException e1) {
+						
+						e1.printStackTrace();
+					}
 				  int availableBytes = in.available();
 				  if(in.available()>0)
 				  {
@@ -402,6 +515,20 @@ public class MainActivity extends IOIOActivity  {
 						 out.write(lit.getBytes());
 						 out.write(13);
 						  
+					  }
+					  
+					  if (temp2.contains("lpo"))
+					  {
+						  String lipobattery = "Lipo Battery: " + lipo_battery;
+						  out.write(lipobattery.getBytes());
+						  out.write(13);
+					  }
+					  
+					  if (temp2.contains("thm"))
+					  {
+						  String therm = "Therm 1: " + thermistor1 + "Therm 2:" + thermistor2;
+						  out.write(therm.getBytes());
+						  out.write(13);
 					  }
 					  
 					  if(temp2.contains("bat"))
@@ -559,6 +686,13 @@ public class MainActivity extends IOIOActivity  {
 		preview.setCamera(camera);
     }
     
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        
+       // stopService(servIntent);
+    }
+    
     private void resetCam() {
 		camera.startPreview();
 		preview.setCamera(camera);
@@ -624,9 +758,12 @@ public class MainActivity extends IOIOActivity  {
     }
     
     protected void onPause() {
-    	super.onPause();  	
+    	  	
     }
 
+    public void onClick(View view) {
+        
+      }
   
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -662,8 +799,8 @@ public class MainActivity extends IOIOActivity  {
       	  magY = event.values[1];
       	  magZ = event.values[2];
 
-      	  mMag.setText("\n" + "Mag X: " + magX + "\n" + "Mag Y: " + magY + "\n" + "Mag Z: " + magZ);
-      	  mBatt.setText("Battery: " + batt + "V" + "\n");
+      	  mMag.setText("\n" + "Mag X: " + extSat + "\n" + "Mag Y: " + satSignal + "\n" + "Mag Z: " + magZ);
+      	  mBatt.setText("Battery: " + lipo_battery + "V" + "\n");
       	} 
     	else if(sensor.getType() == Sensor.TYPE_GYROSCOPE) {
     	  gyroX = event.values[0];
@@ -691,12 +828,12 @@ public class MainActivity extends IOIOActivity  {
     {
     	public void uncaughtException(Thread thread, Throwable ex)
     	{
-            /*PendingIntent myActivity = PendingIntent.getActivity(getBaseContext(), 1, 
-                    new Intent(getBaseContext(), MainActivity.class), PendingIntent.FLAG_ONE_SHOT);
+            PendingIntent myActivity = PendingIntent.getActivity(getBaseContext(), 1, 
+                    new Intent(getBaseContext(), StartedActivity.class), PendingIntent.FLAG_ONE_SHOT);
 
             AlarmManager alarmManager = (AlarmManager)getSystemService(Context.ALARM_SERVICE);
             alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, 
-                    15000, myActivity ); */
+                    15000, myActivity );
     		System.exit(2);
     		defaultUEH.uncaughtException(thread, ex);
     	}
